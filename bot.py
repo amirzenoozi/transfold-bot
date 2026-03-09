@@ -1,7 +1,7 @@
 import os
-import subprocess
 import logging
-from os import utime
+import re
+import subprocess
 
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -128,10 +128,9 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # 5. Create the Inline Keyboard Menu
         keyboard = [
-            [
-                InlineKeyboardButton("🎵 Extract Audio (MP3)", callback_data='conv_mp3'),
-                InlineKeyboardButton("🎞️ Make GIF", callback_data='conv_gif')
-            ],
+            [InlineKeyboardButton("🎵 Extract Audio (MP3)", callback_data='conv_mp3')],
+            [InlineKeyboardButton("🎞️ Make GIF", callback_data='conv_gif')],
+            [InlineKeyboardButton("✂️ Split Video", callback_data='request_split')],
             [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -161,10 +160,7 @@ async def profile_callback_handler(update: Update, context: ContextTypes.DEFAULT
     if query.data == "show_languages":
         # Merging logic: Replace Profile text with Language menu
         keyboard = [
-            [InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en"),
-             InlineKeyboardButton("Italiano 🇮🇹", callback_data="set_lang_it")],
-            [InlineKeyboardButton("Русский 🇷🇺", callback_data="set_lang_ru"),
-             InlineKeyboardButton("Deutsch 🇩🇪", callback_data="set_lang_de")],
+            [InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en")],
             [InlineKeyboardButton(MESSAGES[lang]['profile']['back_to_profile'], callback_data="back_to_profile")]
         ]
         await query.edit_message_text(
@@ -203,7 +199,7 @@ async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 # ---- Video Files Button Handlers ----
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
@@ -234,6 +230,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             output_file = video_converters.video_to_gif(video_path)
             await query.message.reply_animation(animation=open(output_file, 'rb'), caption="Transfold GIF")
 
+        elif action == 'request_split':
+            # Ask the user for the specific format
+            await query.edit_message_text(
+                "Please send the start and end time in this format: `2:10 - 3:40`\n"
+                "Ensure start is >= 0 and end is within the video duration.",
+                parse_mode="Markdown"
+            )
+            # Set a state so the next text message from this user is treated as a timestamp
+            context.user_data['awaiting_split_range'] = True
+            return
+
         await query.delete_message()
 
     except Exception as e:
@@ -247,6 +254,60 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if output_file and os.path.exists(output_file):
             os.remove(output_file)
         context.user_data.clear()
+
+
+# ---- Split Video Using Start/End Timestamps ----
+async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Only process if we are expecting a split range from this user
+    if not context.user_data.get('awaiting_split_range'):
+        return
+
+    text = update.message.text
+    video_path = context.user_data.get('current_video_path')
+
+    # Regex to match MM:SS - MM:SS or HH:MM:SS - HH:MM:SS
+    pattern = r'^(\d{1,2}:?\d{0,2}:?\d{0,2})\s*-\s*(\d{1,2}:?\d{0,2}:?\d{0,2})$'
+    match = re.match(pattern, text)
+
+    if not match:
+        await update.message.reply_text("❌ Invalid format. Please use: `2:10 - 3:40`")
+        return
+
+    start, end = match.groups()
+
+    # Utility to convert timestamp to seconds for validation
+    def to_seconds(t):
+        parts = list(map(int, t.split(':')))
+        if len(parts) == 3: return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        if len(parts) == 2: return parts[0] * 60 + parts[1]
+        return parts[0]
+
+    try:
+        start_sec = to_seconds(start)
+        end_sec = to_seconds(end)
+
+        # Get actual video duration using ffprobe
+        duration_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
+                        "default=noprint_wrappers=1:nokey=1", video_path]
+        file_duration = float(subprocess.check_output(duration_cmd).decode().strip())
+
+        if start_sec < 0 or end_sec > file_duration or start_sec >= end_sec:
+            await update.message.reply_text(f"❌ Limits error. Please stay between 0 and {int(file_duration)} seconds.")
+            return
+
+        # Execute Split
+        status = await update.message.reply_text("✂️ Splitting video...")
+        output = video_converters.split_video(video_path, start, end)
+
+        await update.message.reply_document(document=open(output, 'rb'), filename="split_video.mp4")
+        await status.delete()
+
+    except Exception as e:
+        await update.message.reply_text("❌ Failed to split. Ensure times are correct.")
+    finally:
+        # Cleanup
+        context.user_data['awaiting_split_range'] = False
+        # (Add your file removal logic here)
 
 
 # ---- Helpers ----
@@ -278,7 +339,8 @@ if __name__ == '__main__':
 
     # Handler for videos and documents (in case video is sent as an uncompressed file)
     application.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
-    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(CallbackQueryHandler(video_file_buttons_handler))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_split_timestamp))
 
     print("Bot is running...")
     application.run_polling()
