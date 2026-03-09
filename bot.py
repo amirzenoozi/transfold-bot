@@ -4,8 +4,8 @@ import re
 import subprocess
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram.ext import Application, PreCheckoutQueryHandler, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, MessageHandler, filters
 
 from scripts import video_converters
 from scripts import database_manager
@@ -84,9 +84,8 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(MESSAGES[lang]['contact_home_page'], url="https://amirdouzandeh.me/en"),
             InlineKeyboardButton(MESSAGES[lang]['contact_github'], url="https://github.com/amirzenoozi/transfold-bot")
         ],
-        [
-            InlineKeyboardButton(MESSAGES[lang]['contact_issue'], url="https://github.com/amirzenoozi/transfold-bot/issues/new")
-        ]
+        [InlineKeyboardButton(MESSAGES[lang]['contact_issue'], url="https://github.com/amirzenoozi/transfold-bot/issues/new")],
+        [InlineKeyboardButton("💎 Donate with Telegram Stars", callback_data='show_donation_tiers')]
     ]
 
     await update.message.reply_text(
@@ -190,6 +189,51 @@ async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ]]
         await query.message.edit_text(MESSAGES[lang]['choose_lang'], reply_markup=InlineKeyboardMarkup(keyboard))
 
+    elif query.data == 'show_donation_tiers':
+        keyboard = [
+            [InlineKeyboardButton("⭐️ 5 Stars", callback_data='pay_5'),
+             InlineKeyboardButton("⭐️ 10 Stars", callback_data='pay_10')],
+            [InlineKeyboardButton("⭐️ 25 Stars", callback_data='pay_25'),
+             InlineKeyboardButton("⭐️ 50 Stars", callback_data='pay_50')],
+            [InlineKeyboardButton("🔙 Back", callback_data='back_to_about')]
+        ]
+        await query.edit_message_text(
+            "Select an amount to support the development of **Transfold**:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        return
+
+    elif query.data.startswith('pay_'):
+        amount = int(query.data.split('_')[1])
+
+        await context.bot.send_invoice(
+            chat_id=update.effective_chat.id,
+            title="Support Transfold",
+            description=f"Donation of {amount} Telegram Stars. Thank you! 🚀",
+            payload=f"donation_{amount}",
+            provider_token="",
+            currency="XTR",
+            prices=[LabeledPrice("Donation", amount)]
+        )
+
+    elif query.data == 'back_to_about':
+        # Recreate the original About keyboard
+        keyboard = [
+            [
+                InlineKeyboardButton(MESSAGES[lang]['contact_home_page'], url="https://amirdouzandeh.me/en"),
+                InlineKeyboardButton(MESSAGES[lang]['contact_github'], url="https://github.com/amirzenoozi/transfold-bot")
+            ],
+            [InlineKeyboardButton(MESSAGES[lang]['contact_issue'], url="https://github.com/amirzenoozi/transfold-bot/issues/new")],
+            [InlineKeyboardButton("💎 Donate with Telegram Stars", callback_data='show_donation_tiers')]
+        ]
+
+        await query.edit_message_text(
+            MESSAGES[lang]['contact_message'],
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        return
 
     elif query.data.startswith("set_lang_"):
         new_lang = query.data.split("_")[-1]
@@ -309,6 +353,17 @@ async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data['awaiting_split_range'] = False
         # (Add your file removal logic here)
 
+
+# ---- Payment Handler ----
+async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Answer the pre-checkout query to allow the payment to proceed."""
+    query = update.pre_checkout_query
+    await query.answer(ok=True)
+
+
+async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Confirm to the user that the stars were received."""
+    await update.message.reply_text("🌟 **Thank you for your support!**\nYour donation helps keep Transfold running fast and free.")
 
 # ---- Helpers ----
 async def get_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
