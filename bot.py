@@ -228,7 +228,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # EXECUTE CONVERSION BASED ON ACTION
         if action == 'conv_mp3':
             output_file = video_converters.video_to_mp3(video_path)
-            await query.message.reply_document(audio=open(output_file, 'rb'), filename="extracted_audio.mp3", caption="Here is your audio file! 🎵")
+            await query.message.reply_document(document=open(output_file, 'rb'), filename="extracted_audio.mp3", caption="Here is your audio file! 🎵")
 
         elif action == 'conv_gif':
             output_file = video_converters.video_to_gif(video_path)
