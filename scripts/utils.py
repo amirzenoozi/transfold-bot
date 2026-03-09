@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 
 
@@ -31,5 +32,9 @@ def load_all_locales(locales_path: str, supported_langs: list) -> dict:
     return messages
 
 
+sys.set_int_max_str_digits(0)
 def convert_mb_to_bytes(mb: float) -> int:
-    return int(mb * 1024 * 1024)
+    try:
+        return int(float(mb) * 1024 * 1024)
+    except (ValueError, TypeError):
+        return 0
