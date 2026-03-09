@@ -307,12 +307,13 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text("❌ Conversion failed. The file might be corrupted.")
 
     finally:
-        # CLEANUP: Always remove files to save space
-        if video_path and os.path.exists(video_path):
-            os.remove(video_path)
-        if output_file and os.path.exists(output_file):
-            os.remove(output_file)
-        context.user_data.clear()
+        if not context.user_data.get('awaiting_split_range'):
+            # CLEANUP: Always remove files to save space
+            if video_path and os.path.exists(video_path):
+                os.remove(video_path)
+            if output_file and os.path.exists(output_file):
+                os.remove(output_file)
+            context.user_data.clear()
 
 
 # ---- Split Video Using Start/End Timestamps ----
@@ -366,6 +367,7 @@ async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_T
     finally:
         # Cleanup
         context.user_data['awaiting_split_range'] = False
+        context.user_data.clear()
         # (Add your file removal logic here)
 
 
