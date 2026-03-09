@@ -5,8 +5,9 @@ from os import utime
 
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, MessageHandler, filters
 
+from scripts import video_converters
 from scripts import database_manager
 from scripts import utils
 
@@ -97,66 +98,31 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---- Action Handlers ----
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Get the video or document object
     video = update.message.video or update.message.document
-    user_id = update.message.from_user.id
+    if not video: return
 
-    if not video:
+    # Check size as before
+    if video.file_size > MAX_VIDEO_FILE_SIZE_MB:
+        await update.message.reply_text("File too large!")
         return
 
-    # 1. Check file size before downloading
-    if video.file_size > utils.convert_mb_to_bytes(MAX_VIDEO_FILE_SIZE_MB):
-        size_in_mb = round(video.file_size / (1024 * 1024), 2)
-        await update.message.reply_text(
-            f"❌ **File too large!**\n\nYour file is **{size_in_mb} MB**. "
-            f"The limit is **{MAX_VIDEO_FILE_SIZE_MB} MB**."
-        )
-        return
+    # Store the file_id in user_data so we can access it after the button click
+    context.user_data['current_video_id'] = video.file_id
 
-    # 2. Setup user-specific directory
-    # Path: downloads/12345678/
-    user_dir = os.path.join(BASE_DOWNLOAD_PATH, str(user_id))
-    if not os.path.exists(user_dir):
-        os.makedirs(user_dir)
+    # Create the Menu
+    keyboard = [
+        [
+            InlineKeyboardButton("🎵 Extract Audio (MP3)", callback_data='conv_mp3'),
+            InlineKeyboardButton("🎞️ Make GIF", callback_data='conv_gif')
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Define file paths inside the user folder
-    video_path = os.path.join(user_dir, f"video_{video.file_id[:10]}.mp4")
-    audio_path = os.path.join(user_dir, f"audio_{video.file_id[:10]}.mp3")
-
-    status_msg = await update.message.reply_text("Loading... ⏳")
-
-    try:
-        # 3. Download the file
-        new_file = await context.bot.get_file(video.file_id)
-        await new_file.download_to_drive(video_path)
-
-        # 4. Extract Audio using FFmpeg
-        # -vn: no video, -q:a 2: high quality VBR
-        cmd = [
-            "ffmpeg", "-i", video_path,
-            "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-            audio_path, "-y"
-        ]
-        subprocess.run(cmd, check=True)
-
-        # 5. Send audio back
-        await update.message.reply_audio(
-            audio=open(audio_path, 'rb'),
-            title="Your Audio file",
-            filename="audio.mp3"
-        )
-        await status_msg.delete()
-
-    except Exception as e:
-        logging.error(f"Error for user {user_id}: {e}")
-        await update.message.reply_text("Sorry, an error occurred during transmutation.")
-
-    # # 6. Cleanup - remove files after processing
-    # finally:
-    #     if os.path.exists(video_path):
-    #         os.remove(video_path)
-    #     if os.path.exists(audio_path):
-    #         os.remove(audio_path)
+    await update.message.reply_text(
+        "Target acquired! What should I fold this into?",
+        reply_markup=reply_markup
+    )
 
 
 # --- Profile Actions Handler ---
@@ -187,7 +153,7 @@ async def profile_callback_handler(update: Update, context: ContextTypes.DEFAULT
         await profile_command_edit(update, context)
 
 
-# ---- Callbacks Handlers ----
+# ---- Profile Button Handlers ----
 async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = update.effective_user.id
@@ -209,6 +175,52 @@ async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data['lang'] = new_lang
         await query.message.edit_text(MESSAGES[new_lang]['lang_set'].format(lang=new_lang.upper()))
 
+# ---- Video Files Button Handlers ----
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    action = query.data
+    video_path = context.user_data.get('current_video_path')  # Store path instead of just ID
+
+    if action == 'cancel':
+        # Clean up the original video if they cancel
+        if video_path and os.path.exists(video_path):
+            os.remove(video_path)
+        await query.edit_message_text("Task cancelled. Original file deleted.")
+        return
+
+    if not video_path or not os.path.exists(video_path):
+        await query.edit_message_text("Error: File not found. Please resend the video.")
+        return
+
+    processing_msg = await query.edit_message_text(f"Processing... {action.replace('conv_', '').upper()} ⚙️")
+
+    output_file = None
+    try:
+        # EXECUTE CONVERSION BASED ON ACTION
+        if action == 'conv_mp3':
+            output_file = video_converters.video_to_mp3(video_path)
+            await query.message.reply_document(audio=open(output_file, 'rb'), filename="extracted_audio.mp3", caption="Here is your audio file! 🎵")
+
+        elif action == 'conv_gif':
+            output_file = video_converters.video_to_gif(video_path)
+            await query.message.reply_animation(animation=open(output_file, 'rb'), caption="Transfold GIF")
+
+        await processing_msg.delete()
+        await query.delete_message()
+
+    except Exception as e:
+        print(f"Conversion Error: {e}")
+        await query.edit_message_text("❌ Conversion failed. The file might be corrupted.")
+
+    finally:
+        # CLEANUP: Always remove files to save space
+        if video_path and os.path.exists(video_path):
+            os.remove(video_path)
+        if output_file and os.path.exists(output_file):
+            os.remove(output_file)
+        context.user_data.clear()
 
 # ---- Helpers ----
 async def get_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -239,7 +251,7 @@ if __name__ == '__main__':
 
     # Handler for videos and documents (in case video is sent as an uncompressed file)
     video_handler = MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video)
-    application.add_handler(video_handler)
+    application.add_handler(CallbackQueryHandler(button_handler))
 
     print("Bot is running...")
     application.run_polling()
