@@ -149,7 +149,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(video_path)
 
 
-# --- Profile Actions Handler ---
+# ---- Profile Actions Handler ----
 async def profile_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -174,6 +174,21 @@ async def profile_callback_handler(update: Update, context: ContextTypes.DEFAULT
         await profile_command_edit(update, context)
 
 
+# ---- Main CallBack Handler ----
+async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Routes inline button clicks to the correct handler based on callback_data."""
+    query = update.callback_query
+    data = query.data
+
+    # List of button IDs that belong to Profile or About/Donation
+    about_and_profile_actions = ['show_languages', 'back_to_profile', 'show_donation_tiers', 'back_to_about']
+
+    if data in about_and_profile_actions or data.startswith('pay_') or data.startswith('set_lang_'):
+        await button_tap_handler(update, context)
+    else:
+        await video_file_buttons_handler(update, context)
+
+
 # ---- Profile Button Handlers ----
 async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -189,7 +204,7 @@ async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ]]
         await query.message.edit_text(MESSAGES[lang]['choose_lang'], reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif query.data == 'show_donation_tiers':
+    elif data == 'show_donation_tiers':
         keyboard = [
             [InlineKeyboardButton("⭐️ 5 Stars", callback_data='pay_5'),
              InlineKeyboardButton("⭐️ 10 Stars", callback_data='pay_10')],
@@ -204,7 +219,7 @@ async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    elif query.data.startswith('pay_'):
+    elif data.startswith('pay_'):
         amount = int(query.data.split('_')[1])
 
         await context.bot.send_invoice(
@@ -217,7 +232,7 @@ async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             prices=[LabeledPrice("Donation", amount)]
         )
 
-    elif query.data == 'back_to_about':
+    elif data == 'back_to_about':
         # Recreate the original About keyboard
         keyboard = [
             [
@@ -235,7 +250,7 @@ async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    elif query.data.startswith("set_lang_"):
+    elif data.startswith("set_lang_"):
         new_lang = query.data.split("_")[-1]
         database_manager.set_user_language(user_id, new_lang)
         context.user_data['lang'] = new_lang
@@ -394,8 +409,12 @@ if __name__ == '__main__':
 
     # Handler for videos and documents (in case video is sent as an uncompressed file)
     application.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
-    application.add_handler(CallbackQueryHandler(video_file_buttons_handler))
+    application.add_handler(CallbackQueryHandler(main_callback_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_split_timestamp))
+
+    # Register the Payment Callbacks
+    application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 
     print("Bot is running...")
     application.run_polling()
