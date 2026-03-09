@@ -221,7 +221,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Error: File not found. Please resend the video.")
         return
 
-    processing_msg = await query.edit_message_text(f"Processing... {action.replace('conv_', '').upper()} ⚙️")
+    await query.edit_message_text(f"Processing... {action.replace('conv_', '').upper()} ⚙️")
 
     output_file = None
     try:
@@ -234,7 +234,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             output_file = video_converters.video_to_gif(video_path)
             await query.message.reply_animation(animation=open(output_file, 'rb'), caption="Transfold GIF")
 
-        await processing_msg.delete()
         await query.delete_message()
 
     except Exception as e:
