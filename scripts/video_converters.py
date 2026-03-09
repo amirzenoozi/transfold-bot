@@ -35,3 +35,18 @@ def video_to_gif(input_path: str) -> str:
     ]
     subprocess.run(cmd, check=True)
     return output_path
+
+
+def split_video(input_path: str, start_time: str, end_time: str) -> str:
+    """Splits a video file between start_time and end_time."""
+    output_path = input_path.rsplit('.', 1)[0] + "_split.mp4"
+
+    # -ss: start time, -to: end time
+    # -c copy: splits without re-encoding (very fast)
+    cmd = [
+        "ffmpeg", "-i", input_path,
+        "-ss", start_time, "-to", end_time,
+        "-c", "copy", output_path, "-y"
+    ]
+    subprocess.run(cmd, check=True)
+    return output_path
