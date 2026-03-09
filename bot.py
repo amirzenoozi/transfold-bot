@@ -99,30 +99,56 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- Action Handlers ----
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video = update.message.video or update.message.document
+    user_id = update.effective_user.id
     if not video: return
 
     # Check size as before
-    if video.file_size > MAX_VIDEO_FILE_SIZE_MB:
+    if video.file_size > utils.convert_mb_to_bytes(MAX_VIDEO_FILE_SIZE_MB):
         await update.message.reply_text("File too large!")
         return
 
-    # Store the file_id in user_data so we can access it after the button click
-    context.user_data['current_video_id'] = video.file_id
+    # 3. Setup the user-specific directory
+    user_dir = os.path.join(BASE_DOWNLOAD_PATH, str(user_id))
+    if not os.path.exists(user_dir):
+        os.makedirs(user_dir, exist_ok=True)
 
-    # Create the Menu
-    keyboard = [
-        [
-            InlineKeyboardButton("🎵 Extract Audio (MP3)", callback_data='conv_mp3'),
-            InlineKeyboardButton("🎞️ Make GIF", callback_data='conv_gif')
-        ],
-        [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Create a unique path for the input file
+    # We use part of the file_id to ensure uniqueness
+    video_path = os.path.join(user_dir, f"input_{video.file_id[:10]}.mp4")
 
-    await update.message.reply_text(
-        "Target acquired! What should I fold this into?",
-        reply_markup=reply_markup
-    )
+    # 4. Inform the user and Download
+    status_msg = await update.message.reply_text("📥 **Downloading video...**")
+
+    try:
+        new_file = await context.bot.get_file(video.file_id)
+        await new_file.download_to_drive(video_path)
+
+        # Store the local path in user_data so button_handler can find it
+        context.user_data['current_video_path'] = video_path
+
+        # 5. Create the Inline Keyboard Menu
+        keyboard = [
+            [
+                InlineKeyboardButton("🎵 Extract Audio (MP3)", callback_data='conv_mp3'),
+                InlineKeyboardButton("🎞️ Make GIF", callback_data='conv_gif')
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Remove the 'Downloading' message and show the menu
+        await status_msg.delete()
+        await update.message.reply_text(
+            "**Transfold Menu**\nWhat would you like to do with this file?",
+            reply_markup=reply_markup
+        )
+
+    except Exception as e:
+        logging.error(f"Download error for user {user_id}: {e}")
+        await status_msg.edit_text("❌ Failed to download the file. Please try again.")
+        # Cleanup if download failed halfway
+        if os.path.exists(video_path):
+            os.remove(video_path)
 
 
 # --- Profile Actions Handler ---
@@ -175,6 +201,7 @@ async def button_tap_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data['lang'] = new_lang
         await query.message.edit_text(MESSAGES[new_lang]['lang_set'].format(lang=new_lang.upper()))
 
+
 # ---- Video Files Button Handlers ----
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -221,6 +248,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if output_file and os.path.exists(output_file):
             os.remove(output_file)
         context.user_data.clear()
+
 
 # ---- Helpers ----
 async def get_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
