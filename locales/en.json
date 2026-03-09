@@ -1,0 +1,13 @@
+{
+    "choose_lang": "Please choose your preferred language:",
+    "lang_set": "Language set to {lang}!",
+    "contact_message": "☎️ **About Us**\n\nExplore the source code, visit my homepage, or report any issues you've found:",
+    "contact_home_page": "🖥️ My Homepage",
+    "contact_github": "📁 GitHub Repository",
+    "contact_issue": "⚠️ Report a Problem!",
+    "profile": {
+        "first_step": "👤 **Your Profile**\n\n🌐 **Language:** `{lang}`\n\nSelect an option below to update your settings:",
+        "change_lng_btn": "🌐 Change Language",
+        "back_to_profile": "⬅️ Back to Profile"
+    }
+}
