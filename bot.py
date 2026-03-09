@@ -278,7 +278,7 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("about", about_command))
 
     # Handler for videos and documents (in case video is sent as an uncompressed file)
-    video_handler = MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video)
+    application.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
     application.add_handler(CallbackQueryHandler(button_handler))
 
     print("Bot is running...")
