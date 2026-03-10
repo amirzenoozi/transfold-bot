@@ -8,6 +8,8 @@ WORKDIR /app
 
 # Install the few packages we need directly
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libheif-dev \
+    libde265-dev \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
@@ -15,6 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir \
     python-telegram-bot \
     python-telegram-bot[job-queue] \
+    pillow \
+    pillow-heif \
     asyncio \
     python-dotenv
 
