@@ -63,7 +63,7 @@ def video_to_round(input_path: str) -> str:
     # 1. crop=ih:ih: sets width to match height (square) from the center
     # 2. scale=384:384: resizes to Telegram standard
     # 3. setspts=PTS-STARTPTS: ensures smooth playback
-    filter_complex = "crop=ih:ih,scale=384:384"
+    filter_complex = "crop='min(iw,ih):min(iw,ih)',scale=384:384"
 
     cmd = [
         "ffmpeg", "-i", input_path,
