@@ -1,10 +1,11 @@
 import os
 import logging
 import re
+import asyncio
 import subprocess
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, InputMediaDocument
 from telegram.ext import Application, PreCheckoutQueryHandler, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, MessageHandler, filters
 
 from scripts import image_converters
@@ -157,34 +158,57 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles incoming photos and documents (sent as images)."""
     # Photos in Telegram are sent as a list of sizes; we take the largest one
-    photo = update.message.photo[-1] if update.message.photo else update.message.document
+    message = update.message
     user_id = update.effective_user.id
+    media_group_id = message.media_group_id
 
-    if not photo or (update.message.document and not update.message.document.mime_type.startswith('image/')):
-        return
+    photo = message.photo[-1] if message.photo else message.document
+    if not photo: return
 
     user_dir = os.path.join(BASE_DOWNLOAD_PATH, str(user_id))
     os.makedirs(user_dir, exist_ok=True)
 
     # Generate path
-    image_path = os.path.join(user_dir, f"input_{photo.file_id[:10]}.png")
-
-    status_msg = await update.message.reply_text("📥 **Downloading image...**", parse_mode = "Markdown")
+    file_path = os.path.join(user_dir, f"{photo.file_id[:10]}.png")
     new_file = await context.bot.get_file(photo.file_id)
-    await new_file.download_to_drive(image_path)
+    await new_file.download_to_drive(file_path)
 
-    context.user_data['current_image_path'] = image_path
+    # 2. Handle Media Groups (Galleries)
+    if media_group_id:
+        # Initialize the list for this group if it doesn't exist
+        if 'media_groups' not in context.user_data:
+            context.user_data['media_groups'] = {}
+
+        if media_group_id not in context.user_data['media_groups']:
+            context.user_data['media_groups'][media_group_id] = []
+
+        context.user_data['media_groups'][media_group_id].append(file_path)
+
+        # Wait a moment to see if more images are coming
+        await asyncio.sleep(0.8)
+
+        # Check if we are the "last" message to avoid showing multiple menus
+        if len(context.user_data['media_groups'][media_group_id]) > 1:
+            # If the count is still increasing in another thread, let that one handle it
+            # We only proceed if this is the "final" state of the list
+            current_count = len(context.user_data['media_groups'][media_group_id])
+            await asyncio.sleep(0.2)
+            if len(context.user_data['media_groups'][media_group_id]) > current_count:
+                return
+
+    else:
+        # Single image logic
+        context.user_data['current_image_path'] = file_path
 
     keyboard = [
         [InlineKeyboardButton("🖼️ Convert to JPEG", callback_data='img_to_jpg')],
         [InlineKeyboardButton("❌ Cancel", callback_data='img_cancel')]
     ]
 
-    await status_msg.delete()
     await update.message.reply_text(
-        "**Image Detected**\nWhat should I do with this picture?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
+        f"✅ {len(context.user_data['media_groups'][media_group_id]) if media_group_id else 1} images received.\n"
+        "Choose an action to apply to all:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -378,40 +402,38 @@ async def image_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
     await query.answer()
 
     action = query.data
-    image_path = context.user_data.get('current_image_path')
+    media_groups = context.user_data.get('media_groups', {})
+    image_paths = []
+    if media_groups:
+        # Get the first (and likely only) group
+        group_id = list(media_groups.keys())[0]
+        image_paths = media_groups[group_id]
+    elif 'current_image_path' in context.user_data:
+        image_paths = [context.user_data['current_image_path']]
 
-    if action == 'img_cancel':
-        if image_path and os.path.exists(image_path):
-            os.remove(image_path)
-        await query.edit_message_text("Image task cancelled.")
-        context.user_data.clear()
+    if not image_paths:
+        await query.edit_message_text("❌ Session expired.")
         return
 
-    if not image_path or not os.path.exists(image_path):
-        await query.edit_message_text("❌ Error: Image not found. Please resend.")
-        return
-
-    output_file = None
+    output_files = []
     try:
         if action == 'img_to_jpg':
-            await query.edit_message_text("📸 Converting to JPEG...")
-            output_file = image_converters.convert_to_jpeg(image_path)
+            await query.edit_message_text(f"📸 Converting {len(image_paths)} images...")
 
-            await query.message.reply_document(
-                document=open(output_file, 'rb'),
-                filename="transfold_image.jpg"
-            )
+            for path in image_paths:
+                output_path = image_converters.convert_to_jpeg(path)
+                output_files.append(output_path)
+
+            # Send back as a Gallery (Media Group)
+            media_group = [InputMediaDocument(open(f, 'rb')) for f in output_files]
+            await context.bot.send_media_group(chat_id=update.effective_chat.id, media=media_group)
             await query.delete_message()
 
-    except Exception as e:
-        logging.error(f"Image Error: {e}")
-        await query.edit_message_text("❌ Conversion failed.")
     finally:
-        # Cleanup
-        if image_path and os.path.exists(image_path):
-            os.remove(image_path)
-        if output_file and os.path.exists(output_file):
-            os.remove(output_file)
+        # Cleanup ALL files
+        for f in image_paths + output_files:
+            if os.path.exists(f):
+                os.remove(f)
         context.user_data.clear()
 
 
