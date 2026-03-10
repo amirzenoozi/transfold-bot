@@ -116,7 +116,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video_path = os.path.join(user_dir, f"input_{video.file_id[:10]}.mp4")
 
     # 4. Inform the user and Download
-    status_msg = await update.message.reply_text("📥 **Downloading video...**")
+    status_msg = await update.message.reply_text("📥 **Downloading video...**", parse_mode = "Markdown")
 
     try:
         new_file = await context.bot.get_file(video.file_id)
@@ -131,6 +131,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🎞️ Make GIF", callback_data='conv_gif')],
             [InlineKeyboardButton("✂️ Split Video", callback_data='request_split')],
             [InlineKeyboardButton("🔘 Video to Round", callback_data='conv_round')],
+            [InlineKeyboardButton("🔇 Remove Audio", callback_data='conv_mute')],
             [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -139,7 +140,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.delete()
         await update.message.reply_text(
             "**Transfold Menu**\nWhat would you like to do with this file?",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode = "Markdown"
         )
 
     except Exception as e:
@@ -303,7 +305,17 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
 
         elif action == 'conv_round':
             output_file = video_converters.video_to_round(video_path)
-            await query.message.reply_video_note(video_note=open(output_file, 'rb'))
+            await query.message.reply_document(document=open(output_file, 'rb'))
+
+        elif action == 'conv_mute':
+            await query.edit_message_text("🔇 Muting video...")
+            output_file = video_converters.remove_audio(video_path)
+
+            await query.message.reply_video(
+                video=open(output_file, 'rb'),
+                caption="Audio removed! 🤐"
+            )
+            await query.delete_message()
 
         await query.delete_message()
 
@@ -377,7 +389,7 @@ async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirm to the user that the stars were received."""
-    await update.message.reply_text("🌟 **Thank you for your support!**\nYour donation helps keep Transfold running fast and free.")
+    await update.message.reply_text("🌟 **Thank you for your support!**\nYour donation helps keep Transfold running fast and free.", parse_mode = "Markdown")
 
 # ---- Helpers ----
 async def get_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
