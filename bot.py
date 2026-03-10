@@ -130,6 +130,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🎵 Extract Audio (MP3)", callback_data='conv_mp3')],
             [InlineKeyboardButton("🎞️ Make GIF", callback_data='conv_gif')],
             [InlineKeyboardButton("✂️ Split Video", callback_data='request_split')],
+            [InlineKeyboardButton("🔘 Video to Round", callback_data='conv_round')],
             [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -300,6 +301,10 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
             context.user_data['awaiting_split_range'] = True
             return
 
+        elif action == 'conv_round':
+            output_file = video_converters.video_to_round(video_path)
+            await query.message.reply_video_note(video_note=open(output_file, 'rb'))
+
         await query.delete_message()
 
     except Exception as e:
@@ -324,6 +329,7 @@ async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_T
 
     text = update.message.text
     video_path = context.user_data.get('current_video_path')
+    output = None
 
     # Regex to match MM:SS - MM:SS or HH:MM:SS - HH:MM:SS
     pattern = r'^(\d{1,2}:?\d{0,2}:?\d{0,2})\s*-\s*(\d{1,2}:?\d{0,2}:?\d{0,2})$'
@@ -335,21 +341,10 @@ async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_T
 
     start, end = match.groups()
 
-    # Utility to convert timestamp to seconds for validation
-    def to_seconds(t):
-        parts = list(map(int, t.split(':')))
-        if len(parts) == 3: return parts[0] * 3600 + parts[1] * 60 + parts[2]
-        if len(parts) == 2: return parts[0] * 60 + parts[1]
-        return parts[0]
-
     try:
-        start_sec = to_seconds(start)
-        end_sec = to_seconds(end)
-
-        # Get actual video duration using ffprobe
-        duration_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
-                        "default=noprint_wrappers=1:nokey=1", video_path]
-        file_duration = float(subprocess.check_output(duration_cmd).decode().strip())
+        start_sec = utils.to_seconds(start)
+        end_sec = utils.to_seconds(end)
+        file_duration = video_converters.get_actual_video_duration(video_path)
 
         if start_sec < 0 or end_sec > file_duration or start_sec >= end_sec:
             await update.message.reply_text(f"❌ Limits error. Please stay between 0 and {int(file_duration)} seconds.")
@@ -366,6 +361,8 @@ async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("❌ Failed to split. Ensure times are correct.")
     finally:
         # Cleanup
+        if output and os.path.exists(output):
+            os.remove(output)
         context.user_data['awaiting_split_range'] = False
         context.user_data.clear()
         # (Add your file removal logic here)
