@@ -87,3 +87,23 @@ def get_actual_video_duration(input_path: str) -> float:
     cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
     output = subprocess.check_output(cmd).decode("utf-8")
     return float(output)
+
+
+def remove_audio(input_path: str) -> str:
+    """
+    Removes the audio stream from a video file.
+    This uses stream copying, so it is extremely fast.
+    """
+    output_path = input_path.rsplit('.', 1)[0] + "_muted.mp4"
+
+    cmd = [
+        "ffmpeg", "-i", input_path,
+        "-an",  # Remove audio
+        "-vcodec", "copy",  # Copy video stream without re-encoding
+        output_path, "-y"
+    ]
+
+    import subprocess
+    subprocess.run(cmd, check=True)
+    return output_path
+
