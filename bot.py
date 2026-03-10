@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from telegram.ext import Application, PreCheckoutQueryHandler, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, MessageHandler, filters
 
+from scripts import image_converters
 from scripts import video_converters
 from scripts import database_manager
 from scripts import utils
@@ -95,7 +96,7 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ---- Action Handlers ----
+# ---- Video Action Handlers ----
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video = update.message.video or update.message.document
     user_id = update.effective_user.id
@@ -152,6 +153,41 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(video_path)
 
 
+# ---- Image Action Handler ----
+async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles incoming photos and documents (sent as images)."""
+    # Photos in Telegram are sent as a list of sizes; we take the largest one
+    photo = update.message.photo[-1] if update.message.photo else update.message.document
+    user_id = update.effective_user.id
+
+    if not photo or (update.message.document and not update.message.document.mime_type.startswith('image/')):
+        return
+
+    user_dir = os.path.join(BASE_DOWNLOAD_PATH, str(user_id))
+    os.makedirs(user_dir, exist_ok=True)
+
+    # Generate path
+    image_path = os.path.join(user_dir, f"input_{photo.file_id[:10]}.png")
+
+    status_msg = await update.message.reply_text("📥 **Downloading image...**", parse_mode = "Markdown")
+    new_file = await context.bot.get_file(photo.file_id)
+    await new_file.download_to_drive(image_path)
+
+    context.user_data['current_image_path'] = image_path
+
+    keyboard = [
+        [InlineKeyboardButton("🖼️ Convert to JPEG", callback_data='img_to_jpg')],
+        [InlineKeyboardButton("❌ Cancel", callback_data='img_cancel')]
+    ]
+
+    await status_msg.delete()
+    await update.message.reply_text(
+        "**Image Detected**\nWhat should I do with this picture?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+
+
 # ---- Profile Actions Handler ----
 async def profile_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -185,9 +221,12 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     # List of button IDs that belong to Profile or About/Donation
     about_and_profile_actions = ['show_languages', 'back_to_profile', 'show_donation_tiers', 'back_to_about']
+    image_actions = ['img_to_jpg', 'img_cancel']
 
     if data in about_and_profile_actions or data.startswith('pay_') or data.startswith('set_lang_'):
         await button_tap_handler(update, context)
+    elif data in image_actions:
+        await image_file_buttons_handler(update, context)
     else:
         await video_file_buttons_handler(update, context)
 
@@ -333,6 +372,49 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
             context.user_data.clear()
 
 
+# ---- Image Files Button Handlers ----
+async def image_file_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    action = query.data
+    image_path = context.user_data.get('current_image_path')
+
+    if action == 'img_cancel':
+        if image_path and os.path.exists(image_path):
+            os.remove(image_path)
+        await query.edit_message_text("Image task cancelled.")
+        context.user_data.clear()
+        return
+
+    if not image_path or not os.path.exists(image_path):
+        await query.edit_message_text("❌ Error: Image not found. Please resend.")
+        return
+
+    output_file = None
+    try:
+        if action == 'img_to_jpg':
+            await query.edit_message_text("📸 Converting to JPEG...")
+            output_file = image_converters.convert_to_jpeg(image_path)
+
+            await query.message.reply_document(
+                document=open(output_file, 'rb'),
+                filename="transfold_image.jpg"
+            )
+            await query.delete_message()
+
+    except Exception as e:
+        logging.error(f"Image Error: {e}")
+        await query.edit_message_text("❌ Conversion failed.")
+    finally:
+        # Cleanup
+        if image_path and os.path.exists(image_path):
+            os.remove(image_path)
+        if output_file and os.path.exists(output_file):
+            os.remove(output_file)
+        context.user_data.clear()
+
+
 # ---- Split Video Using Start/End Timestamps ----
 async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Only process if we are expecting a split range from this user
@@ -420,6 +502,7 @@ if __name__ == '__main__':
 
     # Handler for videos and documents (in case video is sent as an uncompressed file)
     application.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image))
     application.add_handler(CallbackQueryHandler(main_callback_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_split_timestamp))
 
