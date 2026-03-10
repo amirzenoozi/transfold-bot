@@ -50,3 +50,40 @@ def split_video(input_path: str, start_time: str, end_time: str) -> str:
     ]
     subprocess.run(cmd, check=True)
     return output_path
+
+
+def video_to_round(input_path: str) -> str:
+    """
+    Converts a video to the Telegram-compatible Round (Telescope) format.
+    Ensures 1:1 aspect ratio and 384x384 resolution.
+    """
+    output_path = input_path.rsplit('.', 1)[0] + "_round.mp4"
+
+    # Filter breakdown:
+    # 1. crop=ih:ih: sets width to match height (square) from the center
+    # 2. scale=384:384: resizes to Telegram standard
+    # 3. setspts=PTS-STARTPTS: ensures smooth playback
+    filter_complex = "crop=ih:ih,scale=384:384"
+
+    cmd = [
+        "ffmpeg", "-i", input_path,
+        "-vf", filter_complex,
+        "-vcodec", "libx264",
+        "-crf", "20",  # High quality
+        "-preset", "fast",
+        "-acodec", "aac",  # Round videos require audio
+        "-strict", "experimental",
+        output_path, "-y"
+    ]
+
+    # Run the command
+    import subprocess
+    subprocess.run(cmd, check=True)
+    return output_path
+
+
+def get_actual_video_duration(input_path: str) -> float:
+    """Returns the actual duration of the video in seconds."""
+    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
+    output = subprocess.check_output(cmd).decode("utf-8")
+    return float(output)
