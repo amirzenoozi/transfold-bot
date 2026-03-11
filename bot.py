@@ -188,20 +188,20 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['media_groups'][media_group_id].append(file_path)
 
         # Wait a moment to see if more images are coming
-        await asyncio.sleep(0.8)
+        current_count = len(context.user_data['media_groups'][media_group_id])
+        await asyncio.sleep(1.2)
 
-        # Check if we are the "last" message to avoid showing multiple menus
-        if len(context.user_data['media_groups'][media_group_id]) > 1:
-            # If the count is still increasing in another thread, let that one handle it
-            # We only proceed if this is the "final" state of the list
-            current_count = len(context.user_data['media_groups'][media_group_id])
-            await asyncio.sleep(0.2)
-            if len(context.user_data['media_groups'][media_group_id]) > current_count:
-                return
+        # If the count changed while we were sleeping, another instance of this
+        # function is now the "latest" one. This one should exit.
+        if len(context.user_data['media_groups'][media_group_id]) > current_count:
+            return
 
     else:
         # Single image logic
         context.user_data['current_image_path'] = file_path
+        context.user_data['media_groups'] = {}
+
+    count = len(context.user_data['media_groups'].get(media_group_id, [])) if media_group_id else 1
 
     keyboard = [
         [InlineKeyboardButton("🖼️ Convert to JPEG", callback_data='img_to_jpg')],
@@ -209,7 +209,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await update.message.reply_text(
-        f"✅ {len(context.user_data['media_groups'][media_group_id]) if media_group_id else 1} images received.\n"
+        f"✅ {count} images received.\n"
         "Choose an action to apply to all:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -417,6 +417,7 @@ async def image_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
     action = query.data
     media_groups = context.user_data.get('media_groups', {})
     image_paths = []
+
     if media_groups:
         # Get the first (and likely only) group
         group_id = list(media_groups.keys())[0]
