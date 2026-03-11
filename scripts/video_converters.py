@@ -107,3 +107,35 @@ def remove_audio(input_path: str) -> str:
     subprocess.run(cmd, check=True)
     return output_path
 
+
+def add_text_watermark(video_path, text):
+    """Adds a text watermark with black text and white shadow."""
+    output_path = video_path.rsplit('.', 1)[0] + "_text_wm.mp4"
+
+    # drawtext filter settings:
+    # x,y: position (10 pixels from bottom-right)
+    # shadowcolor, shadowx, shadowy: creates the white outline/shadow
+    filter_str = (
+        f"drawtext=text='{text}':fontcolor=black:fontsize=24:"
+        f"shadowcolor=white:shadowx=2:shadowy=2:"
+        f"x=w-tw-10:y=h-th-10"
+    )
+
+    cmd = ["ffmpeg", "-i", video_path, "-vf", filter_str, "-codec:a", "copy", output_path, "-y"]
+    subprocess.run(cmd, check=True)
+    return output_path
+
+
+def add_image_watermark(video_path, watermark_path):
+    """Overlays an image watermark, scaled down to 10% of video width."""
+    output_path = video_path.rsplit('.', 1)[0] + "_img_wm.mp4"
+
+    # filter_complex:
+    # [1:v]scale=w=main_w*0.1:h=-1 (scales watermark to 10% width)
+    # overlay=main_w-overlay_w-10:main_h-overlay_h-10 (bottom-right)
+    filter_str = "[1:v]scale=w=main_w*0.1:h=-1[wm];[0:v][wm]overlay=main_w-overlay_w-10:main_h-overlay_h-10"
+
+    cmd = ["ffmpeg", "-i", video_path, "-i", watermark_path, "-filter_complex", filter_str, "-codec:a", "copy",
+           output_path, "-y"]
+    subprocess.run(cmd, check=True)
+    return output_path

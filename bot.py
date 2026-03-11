@@ -33,6 +33,8 @@ LOCALES_PATH = os.path.join(BASE_DIR, "locales")
 SUPPORTED_LANGUAGES = ['en']
 MESSAGES = utils.load_all_locales(LOCALES_PATH, SUPPORTED_LANGUAGES)
 
+MEDIA_GROUP_COOLDOWN = {}
+
 
 # ---- Commands ----
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,9 +133,10 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("🎵 Extract Audio (MP3)", callback_data='conv_mp3')],
             [InlineKeyboardButton("🎞️ Make GIF", callback_data='conv_gif')],
-            [InlineKeyboardButton("✂️ Split Video", callback_data='request_split')],
+            [InlineKeyboardButton("✂️ Split Video", callback_data='conv_split')],
             [InlineKeyboardButton("🔘 Video to Round", callback_data='conv_round')],
             [InlineKeyboardButton("🔇 Remove Audio", callback_data='conv_mute')],
+            [InlineKeyboardButton("🏷️ Add Watermark", callback_data='conv_watermark')],
             [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -355,7 +358,7 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
             output_file = video_converters.video_to_gif(video_path)
             await query.message.reply_animation(animation=open(output_file, 'rb'), caption="Transfold GIF")
 
-        elif action == 'request_split':
+        elif action == 'conv_split':
             # Ask the user for the specific format
             await query.edit_message_text(
                 "Please send the start and end time in this format: `2:10 - 3:40`\n"
@@ -379,6 +382,16 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
                 caption="Audio removed! 🤐"
             )
             await query.delete_message()
+
+        elif action == 'request_watermark':
+            await query.edit_message_text(
+                "📝 **Watermark Mode**\n\n"
+                "Please send the **Text** you want to add, or upload an **Image** file.\n"
+                "I will place it in the bottom-right corner.",
+                parse_mode="Markdown"
+            )
+            context.user_data['awaiting_watermark'] = True
+            return
 
         await query.delete_message()
 
@@ -484,6 +497,50 @@ async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_T
         # (Add your file removal logic here)
 
 
+# ---- Get Watermark File / Text in the Second Phase ----
+async def handle_watermark_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get('awaiting_watermark'):
+        return
+
+    video_path = context.user_data.get('current_video_path')
+    user_id = update.effective_user.id
+    output_file = None
+
+    # 1. Check if it's Text
+    if update.message.text:
+        status = await update.message.reply_text("⚙️ Applying text watermark...")
+        output_file = video_converters.add_text_watermark(video_path, update.message.text)
+
+    # 2. Check if it's an Image (Photo or Document)
+    elif update.message.photo or (update.message.document and update.message.document.mime_type.startswith('image/')):
+        status = await update.message.reply_text("⚙️ Scaling and applying image watermark...")
+
+        photo = update.message.photo[-1] if update.message.photo else update.message.document
+        wm_path = os.path.join(BASE_DOWNLOAD_PATH, str(user_id), "temp_wm.png")
+
+        file = await context.bot.get_file(photo.file_id)
+        await file.download_to_drive(wm_path)
+
+        output_file = video_converters.add_image_watermark(video_path, wm_path)
+        if os.path.exists(wm_path): os.remove(wm_path)
+
+    # 3. Invalid Input
+    else:
+        await update.message.reply_text("❌ We cannot use this as watermark, please send correct file (Text or Image).")
+        return
+
+    # 4. Success and Cleanup
+    try:
+        await update.message.reply_document(document=open(output_file, 'rb'), caption="Watermarked by Transfold! ✅")
+        await status.delete()
+    finally:
+        if output_file and os.path.exists(output_file):
+            os.remove(output_file)
+        if video_path and os.path.exists(video_path):
+            os.remove(video_path)
+        context.user_data.clear()
+
+
 # ---- Payment Handler ----
 async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Answer the pre-checkout query to allow the payment to proceed."""
@@ -526,7 +583,9 @@ if __name__ == '__main__':
     application.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image))
     application.add_handler(CallbackQueryHandler(main_callback_handler))
+
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_split_timestamp))
+    application.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.IMAGE) & ~filters.COMMAND, handle_watermark_input))
 
     # Register the Payment Callbacks
     application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
