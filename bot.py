@@ -608,7 +608,6 @@ if __name__ == '__main__':
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image))
     application.add_handler(CallbackQueryHandler(main_callback_handler))
 
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input_router))
     application.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.IMAGE) & ~filters.COMMAND, text_input_router))
 
     # Register the Payment Callbacks
