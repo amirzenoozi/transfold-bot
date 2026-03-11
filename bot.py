@@ -400,8 +400,8 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text("❌ Conversion failed. The file might be corrupted.")
 
     finally:
-        if not context.user_data.get('awaiting_split_range'):
-            # CLEANUP: Always remove files to save space
+        exclude_actions = ['awaiting_split_range', 'awaiting_watermark']
+        if not context.user_data.get('awaiting_split_range') and not context.user_data.get('awaiting_watermark'):
             if video_path and os.path.exists(video_path):
                 os.remove(video_path)
             if output_file and os.path.exists(output_file):
