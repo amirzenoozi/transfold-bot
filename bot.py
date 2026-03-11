@@ -406,7 +406,10 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
                 os.remove(video_path)
             if output_file and os.path.exists(output_file):
                 os.remove(output_file)
-            context.user_data.clear()
+
+            context.user_data.pop('awaiting_watermark', None)
+            context.user_data.pop('awaiting_split_range', None)
+            context.user_data.pop('current_video_path', None)
 
 
 # ---- Image Files Button Handlers ----
@@ -448,7 +451,10 @@ async def image_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
         for f in image_paths + output_files:
             if os.path.exists(f):
                 os.remove(f)
-        context.user_data.clear()
+
+        context.user_data.pop('awaiting_watermark', None)
+        context.user_data.pop('awaiting_split_range', None)
+        context.user_data.pop('current_video_path', None)
 
 
 # ---- Handle All Waiting For messages ----
@@ -516,8 +522,10 @@ async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_T
         # Cleanup
         if output and os.path.exists(output):
             os.remove(output)
-        context.user_data['awaiting_split_range'] = False
-        context.user_data.clear()
+
+        context.user_data.pop('awaiting_watermark', None)
+        context.user_data.pop('awaiting_split_range', None)
+        context.user_data.pop('current_video_path', None)
         # (Add your file removal logic here)
 
 
@@ -562,7 +570,10 @@ async def handle_watermark_input(update: Update, context: ContextTypes.DEFAULT_T
             os.remove(output_file)
         if video_path and os.path.exists(video_path):
             os.remove(video_path)
-        context.user_data.clear()
+
+        context.user_data.pop('awaiting_watermark', None)
+        context.user_data.pop('awaiting_split_range', None)
+        context.user_data.pop('current_video_path', None)
 
 
 # ---- Payment Handler ----
@@ -603,12 +614,13 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("profile", profile_command))
     application.add_handler(CommandHandler("about", about_command))
 
+    # watermarks/timestamps before they are treated as new files.
+    application.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.IMAGE) & ~filters.COMMAND, text_input_router))
+
     # Handler for videos and documents (in case video is sent as an uncompressed file)
     application.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image))
     application.add_handler(CallbackQueryHandler(main_callback_handler))
-
-    application.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.IMAGE) & ~filters.COMMAND, text_input_router))
 
     # Register the Payment Callbacks
     application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
