@@ -451,6 +451,29 @@ async def image_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
         context.user_data.clear()
 
 
+# ---- Handle All Waiting For messages ----
+async def text_input_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Routes all text/media messages to the correct feature based on user state."""
+    user_data = context.user_data
+
+    # Priority 1: Check if user is adding a Watermark
+    if user_data.get('awaiting_watermark'):
+        await handle_watermark_input(update, context)
+        return
+
+    # Priority 2: Check if user is Splitting a video
+    if user_data.get('awaiting_split_range'):
+        if update.message.text:
+            await handle_split_timestamp(update, context)
+        else:
+            await update.message.reply_text("❌ Please send the timestamp format (e.g., 00:10 - 00:20)")
+        return
+
+    # Priority 3: Fallback (User sent a message without picking a menu option)
+    # If the bot isn't waiting for anything, we just ignore it or send help
+    return
+
+
 # ---- Split Video Using Start/End Timestamps ----
 async def handle_split_timestamp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Only process if we are expecting a split range from this user
@@ -585,8 +608,8 @@ if __name__ == '__main__':
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image))
     application.add_handler(CallbackQueryHandler(main_callback_handler))
 
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_split_timestamp))
-    application.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.IMAGE) & ~filters.COMMAND, handle_watermark_input))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input_router))
+    application.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.IMAGE) & ~filters.COMMAND, text_input_router))
 
     # Register the Payment Callbacks
     application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
