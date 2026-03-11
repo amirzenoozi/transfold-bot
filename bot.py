@@ -383,7 +383,7 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
             )
             await query.delete_message()
 
-        elif action == 'request_watermark':
+        elif action == 'conv_watermark':
             await query.edit_message_text(
                 "📝 **Watermark Mode**\n\n"
                 "Please send the **Text** you want to add, or upload an **Image** file.\n"
