@@ -133,9 +133,27 @@ def add_image_watermark(video_path, watermark_path):
     # filter_complex:
     # [1:v]scale=w=main_w*0.1:h=-1 (scales watermark to 10% width)
     # overlay=main_w-overlay_w-10:main_h-overlay_h-10 (bottom-right)
-    filter_str = "[1:v]scale=w=main_w*0.1:h=-1[wm];[0:v][wm]overlay=main_w-overlay_w-10:main_h-overlay_h-10"
+    filter_str = (
+        "[1:v]scale=w='trunc(main_w*0.15/2)*2':h=-1[wm];"
+        "[0:v][wm]overlay=main_w-overlay_w-10:main_h-overlay_h-10"
+    )
 
-    cmd = ["ffmpeg", "-i", video_path, "-i", watermark_path, "-filter_complex", filter_str, "-codec:a", "copy",
-           output_path, "-y"]
-    subprocess.run(cmd, check=True)
+    cmd = [
+        'ffmpeg',
+        '-i', video_path,
+        '-i', watermark_path,
+        '-filter_complex', filter_str,
+        '-c:v', 'libx264',  # Force standard video codec
+        '-preset', 'veryfast',
+        '-crf', '23',  # Good balance of quality/size
+        '-c:a', 'copy',  # Keep original audio
+        output_path,
+        '-y'
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        print(f"FFmpeg Stderr: {e.stderr}")  # This will show the REAL reason in your console
+        raise e
+
     return output_path
