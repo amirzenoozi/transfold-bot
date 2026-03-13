@@ -34,10 +34,11 @@ def add_mosaic_watermark(image_path, text):
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            "Arial.ttf"  # Local project folder
+            "Arial.ttf"
         ]
 
-        fontsize = int(base.width * 0.04)  # Dynamic font size (4% of width)
+        fontsize = int(base.width * 0.08)
+        print(fontsize)
         for path in font_paths:
             if os.path.exists(path):
                 font = ImageFont.truetype(path, fontsize)
