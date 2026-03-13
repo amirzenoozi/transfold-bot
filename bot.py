@@ -249,7 +249,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     # List of button IDs that belong to Profile or About/Donation
     about_and_profile_actions = ['show_languages', 'back_to_profile', 'show_donation_tiers', 'back_to_about']
-    image_actions = ['img_to_jpg', 'img_cancel']
+    image_actions = ['img_to_jpg', 'img_watermark', 'img_cancel']
 
     if data in about_and_profile_actions or data.startswith('pay_') or data.startswith('set_lang_'):
         await button_tap_handler(update, context)
@@ -485,6 +485,7 @@ async def text_input_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Please send the timestamp format (e.g., 00:10 - 00:20)")
         return
 
+    # Priority 3: Check if user is adding a Watermark to an Image
     elif user_data.get('awaiting_img_watermark'):
         if update.message.text:
             image_path = user_data.get('current_image_path')
@@ -493,7 +494,8 @@ async def text_input_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(document=open(output, 'rb'), caption="Mosaic Complete! ✅")
             await status.delete()
             # Cleanup
-            if os.path.exists(output): os.remove(output)
+            if os.path.exists(output):
+                os.remove(output)
             context.user_data.pop('awaiting_img_watermark', None)
         return
 
@@ -564,19 +566,6 @@ async def handle_watermark_input(update: Update, context: ContextTypes.DEFAULT_T
     if update.message.text:
         status = await update.message.reply_text("⚙️ Applying text watermark...")
         output_file = video_converters.add_text_watermark(video_path, update.message.text)
-
-    # 2. Check if it's an Image (Photo or Document)
-    elif update.message.photo or (update.message.document and update.message.document.mime_type.startswith('image/')):
-        status = await update.message.reply_text("⚙️ Scaling and applying image watermark...")
-
-        photo = update.message.photo[-1] if update.message.photo else update.message.document
-        wm_path = os.path.join(BASE_DOWNLOAD_PATH, str(user_id), "temp_wm.png")
-
-        file = await context.bot.get_file(photo.file_id)
-        await file.download_to_drive(wm_path)
-
-        output_file = video_converters.add_image_watermark(video_path, wm_path)
-        if os.path.exists(wm_path): os.remove(wm_path)
 
     # 3. Invalid Input
     else:
