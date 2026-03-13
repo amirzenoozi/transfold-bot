@@ -50,8 +50,8 @@ def add_mosaic_watermark(image_path, text):
         # 3. Dynamic Mosaic Spacing
         # We want roughly 4-5 repeats horizontally
         w, h = base.size
-        step_x = int(w / 4)
-        step_y = int(h / 4)
+        step_x = int(w / 3)
+        step_y = int(h / 3)
 
         # 4. Draw the Grid
         # fill=(255,255,255,51) -> White with ~20% opacity (51/255)
