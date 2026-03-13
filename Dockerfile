@@ -10,6 +10,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libheif-dev \
     libde265-dev \
+    fonts-dejavu-core \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
