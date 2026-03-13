@@ -37,7 +37,7 @@ def add_mosaic_watermark(image_path, text):
             "Arial.ttf"
         ]
 
-        fontsize = int(base.width * 0.08)
+        fontsize = int(base.width * 0.04)
         print(fontsize)
         for path in font_paths:
             if os.path.exists(path):
@@ -50,8 +50,8 @@ def add_mosaic_watermark(image_path, text):
         # 3. Dynamic Mosaic Spacing
         # We want roughly 4-5 repeats horizontally
         w, h = base.size
-        step_x = int(w / 3)
-        step_y = int(h / 3)
+        step_x = int(w / 4)
+        step_y = int(h / 4)
 
         # 4. Draw the Grid
         # fill=(255,255,255,51) -> White with ~20% opacity (51/255)
