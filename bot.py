@@ -387,7 +387,7 @@ async def video_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
         elif action == 'conv_watermark':
             await query.edit_message_text(
                 "📝 **Watermark Mode**\n\n"
-                "Please send the **Text** you want to add, or upload an **Image** file.\n"
+                "Please send the **Text** you want to add.\n"
                 "I will place it in the bottom-right corner.",
                 parse_mode="Markdown"
             )
@@ -637,7 +637,7 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("about", about_command))
 
     # watermarks/timestamps before they are treated as new files.
-    application.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.IMAGE) & ~filters.COMMAND, text_input_router))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input_router))
 
     # Handler for videos and documents (in case video is sent as an uncompressed file)
     application.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
