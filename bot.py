@@ -205,6 +205,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("🖼️ Convert to JPEG", callback_data='img_to_jpg')],
+        [InlineKeyboardButton("🏷️ Add Watermark", callback_data='img_watermark')],
         [InlineKeyboardButton("❌ Cancel", callback_data='img_cancel')]
     ]
 
@@ -446,15 +447,24 @@ async def image_file_buttons_handler(update: Update, context: ContextTypes.DEFAU
             await context.bot.send_media_group(chat_id=update.effective_chat.id, media=media_group)
             await query.delete_message()
 
+        elif action == 'img_watermark':
+            await query.edit_message_text(
+                "📝 **Image Watermark Mode**\n\nPlease send the **Text** for the mosaic watermark.",
+                parse_mode="Markdown"
+            )
+            context.user_data['awaiting_img_watermark'] = True
+            return
+
     finally:
         # Cleanup ALL files
-        for f in image_paths + output_files:
-            if os.path.exists(f):
-                os.remove(f)
+        if not context.user_data.get('awaiting_img_watermark'):
+            for f in image_paths + output_files:
+                if os.path.exists(f):
+                    os.remove(f)
 
-        context.user_data.pop('awaiting_watermark', None)
-        context.user_data.pop('awaiting_split_range', None)
-        context.user_data.pop('current_video_path', None)
+            context.user_data.pop('awaiting_watermark', None)
+            context.user_data.pop('awaiting_split_range', None)
+            context.user_data.pop('current_video_path', None)
 
 
 # ---- Handle All Waiting For messages ----
@@ -468,11 +478,23 @@ async def text_input_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Priority 2: Check if user is Splitting a video
-    if user_data.get('awaiting_split_range'):
+    elif user_data.get('awaiting_split_range'):
         if update.message.text:
             await handle_split_timestamp(update, context)
         else:
             await update.message.reply_text("❌ Please send the timestamp format (e.g., 00:10 - 00:20)")
+        return
+
+    elif user_data.get('awaiting_img_watermark'):
+        if update.message.text:
+            image_path = user_data.get('current_image_path')
+            status = await update.message.reply_text("🪄 Creating mosaic watermark...")
+            output = image_converters.add_mosaic_watermark(image_path, update.message.text)
+            await update.message.reply_document(document=open(output, 'rb'), caption="Mosaic Complete! ✅")
+            await status.delete()
+            # Cleanup
+            if os.path.exists(output): os.remove(output)
+            context.user_data.pop('awaiting_img_watermark', None)
         return
 
     # Priority 3: Fallback (User sent a message without picking a menu option)
